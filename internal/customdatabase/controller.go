@@ -3,15 +3,19 @@ package customdatabase
 import (
 	"context"
 	"fmt"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
+	informerscorev1 "k8s.io/client-go/informers/core/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
 	typedcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
+	listerscorev1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
@@ -40,6 +44,9 @@ type Controller struct {
 	// sampleclientset is a clientset for our own API group
 	sampleclientset clientset.Interface
 
+	secretLister listerscorev1.SecretLister
+	secretSynced cache.InformerSynced
+
 	customDatabasesLister listers.CustomDatabaseLister
 	customDatabasesSynced cache.InformerSynced
 
@@ -59,7 +66,9 @@ func NewController(
 	ctx context.Context,
 	kubeclientset kubernetes.Interface,
 	sampleclientset clientset.Interface,
-	fooInformer informers.CustomDatabaseInformer) *Controller {
+	secretInformer informerscorev1.SecretInformer,
+	customDatabaseInformer informers.CustomDatabaseInformer,
+) *Controller {
 	logger := klog.FromContext(ctx)
 
 	// Create event broadcaster
@@ -76,20 +85,23 @@ func NewController(
 	controller := &Controller{
 		kubeclientset:         kubeclientset,
 		sampleclientset:       sampleclientset,
-		customDatabasesLister: fooInformer.Lister(),
-		customDatabasesSynced: fooInformer.Informer().HasSynced,
+		customDatabasesLister: customDatabaseInformer.Lister(),
+		customDatabasesSynced: customDatabaseInformer.Informer().HasSynced,
+		secretLister:          secretInformer.Lister(),
+		secretSynced:          secretInformer.Informer().HasSynced,
 		workqueue:             workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "CustomDatabases"),
 		recorder:              recorder,
 	}
 
 	logger.Info("Setting up event handlers")
 	// Set up an event handler for when Foo resources change
-	fooInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+	customDatabaseInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: controller.enqueueCustomDatabase,
 		UpdateFunc: func(old, new interface{}) {
 			// todo implementation
 		},
-		DeleteFunc: controller.enqueueCustomDatabase,
+		// todo
+		//DeleteFunc: controller.enqueueCustomDatabase,
 	})
 
 	return controller
@@ -110,7 +122,7 @@ func (c *Controller) Run(ctx context.Context, workers int) error {
 	// Wait for the caches to be synced before starting workers
 	logger.Info("Waiting for informer caches to sync")
 
-	if ok := cache.WaitForCacheSync(ctx.Done(), c.customDatabasesSynced); !ok {
+	if ok := cache.WaitForCacheSync(ctx.Done(), c.customDatabasesSynced, c.secretSynced); !ok {
 		return fmt.Errorf("failed to wait for caches to sync")
 	}
 
@@ -197,7 +209,6 @@ func (c *Controller) processNextWorkItem(ctx context.Context) bool {
 func (c *Controller) syncHandler(ctx context.Context, key string) error {
 	// Convert the namespace/name string into a distinct namespace and name
 	logger := klog.LoggerWithValues(klog.FromContext(ctx), "resourceName", key)
-	_ = logger
 
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
@@ -206,22 +217,83 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 	}
 
 	// Get the CustomDatabase resource with this namespace/name
-	foo, err := c.customDatabasesLister.CustomDatabases(namespace).Get(name)
+	customDatabase, err := c.customDatabasesLister.CustomDatabases(namespace).Get(name)
 	if err != nil {
 		// The CustomDatabase resource may no longer exist, in which case we stop
 		// processing.
 		if errors.IsNotFound(err) {
-			utilruntime.HandleError(fmt.Errorf("foo '%s' in work queue no longer exists", key))
+			utilruntime.HandleError(fmt.Errorf("customDatabase '%s' in work queue no longer exists", key))
 			return nil
 		}
 
 		return err
 	}
 
-	//
+	secretName := customDatabase.Spec.SecretName
+	if secretName == "" {
+		// We choose to absorb the error here as the worker would requeue the
+		// resource otherwise. Instead, the next time the resource is updated
+		// the resource will be queued again.
+		utilruntime.HandleError(fmt.Errorf("%s: secretName name must be specified", key))
+		return nil
+	}
 
-	c.recorder.Event(foo, corev1.EventTypeNormal, SuccessSynced, MessageResourceSynced)
+	// Get the secret with the name specified in CustomDatabase.spec
+	secret, err := c.secretLister.Secrets(customDatabase.Namespace).Get(secretName)
+	if errors.IsNotFound(err) {
+		utilruntime.HandleError(fmt.Errorf("secret with name '%s' must be existed", secretName))
+	}
+	if err != nil {
+		return err
+	}
+
+	logger.V(4).Info("Update secret resource", "secretName", secret.Name)
+	createdDatabaseInfo, err := c.createDatabase(ctx, customDatabase.Name)
+	if err != nil {
+		return err
+	}
+
+	// update and store secret value
+	logger.V(4).Info("Update secret resource", "secretName", secret.Name)
+	newSecret := newSecretWithDBInfo(secret, createdDatabaseInfo)
+	_, err = c.kubeclientset.CoreV1().Secrets(customDatabase.Namespace).Update(ctx, newSecret, metav1.UpdateOptions{})
+	if err != nil {
+		return err
+	}
+
+	c.recorder.Event(customDatabase, corev1.EventTypeNormal, SuccessSynced, MessageResourceSynced)
 	return nil
+}
+
+func (c *Controller) createDatabase(ctx context.Context, name string) (CreatedDatabaseInfo, error) {
+	// TODO create really object from business logic
+	return CreatedDatabaseInfo{
+		Host: Host{
+			DSN:  "localhost",
+			Port: 5432,
+		},
+		Database: Database{
+			Name:     name,
+			User:     name,
+			Password: name + name + name,
+		},
+	}, nil
+}
+
+func newSecretWithDBInfo(secret *corev1.Secret, dbInfo CreatedDatabaseInfo) *corev1.Secret {
+	newSecret := secret.DeepCopy()
+
+	prefix := strings.Title(dbInfo.Name)
+
+	// todo security https://kubernetes.io/docs/concepts/security/secrets-good-practices/
+	newSecret.StringData = make(map[string]string)
+	newSecret.StringData["customDatabase"+prefix+"HostDSN"] = dbInfo.DSN
+	newSecret.StringData["customDatabase"+prefix+"HostPort"] = fmt.Sprintf("%d", dbInfo.Port)
+	newSecret.StringData["customDatabase"+prefix+"DatabaseName"] = dbInfo.Database.Name
+	newSecret.StringData["customDatabase"+prefix+"DatabaseUser"] = dbInfo.Database.User
+	newSecret.StringData["customDatabase"+prefix+"DatabasePassword"] = dbInfo.Database.Password
+
+	return newSecret
 }
 
 // enqueueCustomDatabase takes a Foo resource and converts it into a namespace/name

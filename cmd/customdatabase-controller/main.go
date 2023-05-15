@@ -52,7 +52,8 @@ func main() {
 
 	controller := customdatabase.NewController(
 		ctx, kubeClient, exampleClient,
-		exampleInformerFactory.Customdatabase().V1().CustomDatabases(),
+		kubeInformerFactory.Core().V1().Secrets(),
+		exampleInformerFactory.Igor().V1().CustomDatabases(),
 	)
 
 	// notice that there is no need to run Start methods in a separate goroutine. (i.e. go kubeInformerFactory.Start(ctx.done())
