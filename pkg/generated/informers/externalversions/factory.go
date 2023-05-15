@@ -230,9 +230,9 @@ type SharedInformerFactory interface {
 	// client.
 	InformerFor(obj runtime.Object, newFunc internalinterfaces.NewInformerFunc) cache.SharedIndexInformer
 
-	Customdatabase() cusotmdatabase.Interface
+	Igor() cusotmdatabase.Interface
 }
 
-func (f *sharedInformerFactory) Customdatabase() cusotmdatabase.Interface {
+func (f *sharedInformerFactory) Igor() cusotmdatabase.Interface {
 	return cusotmdatabase.New(f, f.namespace, f.tweakListOptions)
 }

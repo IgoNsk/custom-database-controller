@@ -11,14 +11,14 @@ import (
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
 	serializer "k8s.io/apimachinery/pkg/runtime/serializer"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	customdatabasev1 "k8s.io/custom-database/pkg/apis/cusotmdatabase/v1"
+	igorv1 "k8s.io/custom-database/pkg/apis/cusotmdatabase/v1"
 )
 
 var Scheme = runtime.NewScheme()
 var Codecs = serializer.NewCodecFactory(Scheme)
 var ParameterCodec = runtime.NewParameterCodec(Scheme)
 var localSchemeBuilder = runtime.SchemeBuilder{
-	customdatabasev1.AddToScheme,
+	igorv1.AddToScheme,
 }
 
 // AddToScheme adds all types of this clientset into the given scheme. This allows composition

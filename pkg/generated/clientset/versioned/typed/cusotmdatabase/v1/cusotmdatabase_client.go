@@ -13,24 +13,24 @@ import (
 	"k8s.io/custom-database/pkg/generated/clientset/versioned/scheme"
 )
 
-type CustomdatabaseV1Interface interface {
+type IgorV1Interface interface {
 	RESTClient() rest.Interface
 	CustomDatabasesGetter
 }
 
-// CustomdatabaseV1Client is used to interact with features provided by the customdatabase group.
-type CustomdatabaseV1Client struct {
+// IgorV1Client is used to interact with features provided by the igor.yatsevich.ru group.
+type IgorV1Client struct {
 	restClient rest.Interface
 }
 
-func (c *CustomdatabaseV1Client) CustomDatabases(namespace string) CustomDatabaseInterface {
+func (c *IgorV1Client) CustomDatabases(namespace string) CustomDatabaseInterface {
 	return newCustomDatabases(c, namespace)
 }
 
-// NewForConfig creates a new CustomdatabaseV1Client for the given config.
+// NewForConfig creates a new IgorV1Client for the given config.
 // NewForConfig is equivalent to NewForConfigAndClient(c, httpClient),
 // where httpClient was generated with rest.HTTPClientFor(c).
-func NewForConfig(c *rest.Config) (*CustomdatabaseV1Client, error) {
+func NewForConfig(c *rest.Config) (*IgorV1Client, error) {
 	config := *c
 	if err := setConfigDefaults(&config); err != nil {
 		return nil, err
@@ -42,9 +42,9 @@ func NewForConfig(c *rest.Config) (*CustomdatabaseV1Client, error) {
 	return NewForConfigAndClient(&config, httpClient)
 }
 
-// NewForConfigAndClient creates a new CustomdatabaseV1Client for the given config and http client.
+// NewForConfigAndClient creates a new IgorV1Client for the given config and http client.
 // Note the http client provided takes precedence over the configured transport values.
-func NewForConfigAndClient(c *rest.Config, h *http.Client) (*CustomdatabaseV1Client, error) {
+func NewForConfigAndClient(c *rest.Config, h *http.Client) (*IgorV1Client, error) {
 	config := *c
 	if err := setConfigDefaults(&config); err != nil {
 		return nil, err
@@ -53,12 +53,12 @@ func NewForConfigAndClient(c *rest.Config, h *http.Client) (*CustomdatabaseV1Cli
 	if err != nil {
 		return nil, err
 	}
-	return &CustomdatabaseV1Client{client}, nil
+	return &IgorV1Client{client}, nil
 }
 
-// NewForConfigOrDie creates a new CustomdatabaseV1Client for the given config and
+// NewForConfigOrDie creates a new IgorV1Client for the given config and
 // panics if there is an error in the config.
-func NewForConfigOrDie(c *rest.Config) *CustomdatabaseV1Client {
+func NewForConfigOrDie(c *rest.Config) *IgorV1Client {
 	client, err := NewForConfig(c)
 	if err != nil {
 		panic(err)
@@ -66,9 +66,9 @@ func NewForConfigOrDie(c *rest.Config) *CustomdatabaseV1Client {
 	return client
 }
 
-// New creates a new CustomdatabaseV1Client for the given RESTClient.
-func New(c rest.Interface) *CustomdatabaseV1Client {
-	return &CustomdatabaseV1Client{c}
+// New creates a new IgorV1Client for the given RESTClient.
+func New(c rest.Interface) *IgorV1Client {
+	return &IgorV1Client{c}
 }
 
 func setConfigDefaults(config *rest.Config) error {
@@ -86,7 +86,7 @@ func setConfigDefaults(config *rest.Config) error {
 
 // RESTClient returns a RESTClient that is used to communicate
 // with API server by this client implementation.
-func (c *CustomdatabaseV1Client) RESTClient() rest.Interface {
+func (c *IgorV1Client) RESTClient() rest.Interface {
 	if c == nil {
 		return nil
 	}

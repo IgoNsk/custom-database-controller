@@ -1,5 +1,5 @@
 package cusotmdatabase
 
 const (
-	GroupName = "customdatabase"
+	GroupName = "igor.yatsevich.ru"
 )

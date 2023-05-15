@@ -18,7 +18,7 @@ import (
 
 // FakeCustomDatabases implements CustomDatabaseInterface
 type FakeCustomDatabases struct {
-	Fake *FakeCustomdatabaseV1
+	Fake *FakeIgorV1
 	ns   string
 }
 

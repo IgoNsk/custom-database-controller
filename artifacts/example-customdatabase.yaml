@@ -1,0 +1,6 @@
+apiVersion: igor.yatsevich.ru/v1
+kind: CustomDatabase
+metadata:
+  name: example-database
+spec:
+  secretName: example-secret

@@ -11,17 +11,17 @@ import (
 	v1 "k8s.io/custom-database/pkg/generated/clientset/versioned/typed/cusotmdatabase/v1"
 )
 
-type FakeCustomdatabaseV1 struct {
+type FakeIgorV1 struct {
 	*testing.Fake
 }
 
-func (c *FakeCustomdatabaseV1) CustomDatabases(namespace string) v1.CustomDatabaseInterface {
+func (c *FakeIgorV1) CustomDatabases(namespace string) v1.CustomDatabaseInterface {
 	return &FakeCustomDatabases{c, namespace}
 }
 
 // RESTClient returns a RESTClient that is used to communicate
 // with API server by this client implementation.
-func (c *FakeCustomdatabaseV1) RESTClient() rest.Interface {
+func (c *FakeIgorV1) RESTClient() rest.Interface {
 	var ret *rest.RESTClient
 	return ret
 }

@@ -43,7 +43,7 @@ type customDatabases struct {
 }
 
 // newCustomDatabases returns a CustomDatabases
-func newCustomDatabases(c *CustomdatabaseV1Client, namespace string) *customDatabases {
+func newCustomDatabases(c *IgorV1Client, namespace string) *customDatabases {
 	return &customDatabases{
 		client: c.RESTClient(),
 		ns:     namespace,

@@ -49,13 +49,13 @@ func NewFilteredCustomDatabaseInformer(client versioned.Interface, namespace str
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.CustomdatabaseV1().CustomDatabases(namespace).List(context.TODO(), options)
+				return client.IgorV1().CustomDatabases(namespace).List(context.TODO(), options)
 			},
 			WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.CustomdatabaseV1().CustomDatabases(namespace).Watch(context.TODO(), options)
+				return client.IgorV1().CustomDatabases(namespace).Watch(context.TODO(), options)
 			},
 		},
 		&cusotmdatabasev1.CustomDatabase{},

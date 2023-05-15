@@ -12,8 +12,8 @@ import (
 	fakediscovery "k8s.io/client-go/discovery/fake"
 	"k8s.io/client-go/testing"
 	clientset "k8s.io/custom-database/pkg/generated/clientset/versioned"
-	customdatabasev1 "k8s.io/custom-database/pkg/generated/clientset/versioned/typed/cusotmdatabase/v1"
-	fakecustomdatabasev1 "k8s.io/custom-database/pkg/generated/clientset/versioned/typed/cusotmdatabase/v1/fake"
+	igorv1 "k8s.io/custom-database/pkg/generated/clientset/versioned/typed/cusotmdatabase/v1"
+	fakeigorv1 "k8s.io/custom-database/pkg/generated/clientset/versioned/typed/cusotmdatabase/v1/fake"
 )
 
 // NewSimpleClientset returns a clientset that will respond with the provided objects.
@@ -66,7 +66,7 @@ var (
 	_ testing.FakeClient  = &Clientset{}
 )
 
-// CustomdatabaseV1 retrieves the CustomdatabaseV1Client
-func (c *Clientset) CustomdatabaseV1() customdatabasev1.CustomdatabaseV1Interface {
-	return &fakecustomdatabasev1.FakeCustomdatabaseV1{Fake: &c.Fake}
+// IgorV1 retrieves the IgorV1Client
+func (c *Clientset) IgorV1() igorv1.IgorV1Interface {
+	return &fakeigorv1.FakeIgorV1{Fake: &c.Fake}
 }

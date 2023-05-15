@@ -12,23 +12,23 @@ import (
 	discovery "k8s.io/client-go/discovery"
 	rest "k8s.io/client-go/rest"
 	flowcontrol "k8s.io/client-go/util/flowcontrol"
-	customdatabasev1 "k8s.io/custom-database/pkg/generated/clientset/versioned/typed/cusotmdatabase/v1"
+	igorv1 "k8s.io/custom-database/pkg/generated/clientset/versioned/typed/cusotmdatabase/v1"
 )
 
 type Interface interface {
 	Discovery() discovery.DiscoveryInterface
-	CustomdatabaseV1() customdatabasev1.CustomdatabaseV1Interface
+	IgorV1() igorv1.IgorV1Interface
 }
 
 // Clientset contains the clients for groups.
 type Clientset struct {
 	*discovery.DiscoveryClient
-	customdatabaseV1 *customdatabasev1.CustomdatabaseV1Client
+	igorV1 *igorv1.IgorV1Client
 }
 
-// CustomdatabaseV1 retrieves the CustomdatabaseV1Client
-func (c *Clientset) CustomdatabaseV1() customdatabasev1.CustomdatabaseV1Interface {
-	return c.customdatabaseV1
+// IgorV1 retrieves the IgorV1Client
+func (c *Clientset) IgorV1() igorv1.IgorV1Interface {
+	return c.igorV1
 }
 
 // Discovery retrieves the DiscoveryClient
@@ -75,7 +75,7 @@ func NewForConfigAndClient(c *rest.Config, httpClient *http.Client) (*Clientset,
 
 	var cs Clientset
 	var err error
-	cs.customdatabaseV1, err = customdatabasev1.NewForConfigAndClient(&configShallowCopy, httpClient)
+	cs.igorV1, err = igorv1.NewForConfigAndClient(&configShallowCopy, httpClient)
 	if err != nil {
 		return nil, err
 	}
@@ -100,7 +100,7 @@ func NewForConfigOrDie(c *rest.Config) *Clientset {
 // New creates a new Clientset for the given RESTClient.
 func New(c rest.Interface) *Clientset {
 	var cs Clientset
-	cs.customdatabaseV1 = customdatabasev1.New(c)
+	cs.igorV1 = igorv1.New(c)
 
 	cs.DiscoveryClient = discovery.NewDiscoveryClient(c)
 	return &cs
