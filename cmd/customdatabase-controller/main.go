@@ -14,6 +14,7 @@ import (
 
 	"k8s.io/custom-database/internal/customdatabase"
 	"k8s.io/custom-database/internal/customdatabase/adapters/postgres"
+	"k8s.io/custom-database/internal/customdatabase/usecases"
 	clientset "k8s.io/custom-database/pkg/generated/clientset/versioned"
 	informers "k8s.io/custom-database/pkg/generated/informers/externalversions"
 )
@@ -78,7 +79,7 @@ func main() {
 		klog.FlushAndExit(klog.ExitFlushTimeout, 1)
 	}
 
-	controller := customdatabase.NewController(
+	c := usecases.NewController(
 		ctx, kubeClient, exampleClient,
 		kubeInformerFactory.Core().V1().Secrets(),
 		exampleInformerFactory.Igor().V1().CustomDatabases(),
@@ -91,7 +92,7 @@ func main() {
 	kubeInformerFactory.Start(ctx.Done())
 	exampleInformerFactory.Start(ctx.Done())
 
-	if err = controller.Run(ctx, workers); err != nil {
+	if err = c.Run(ctx, workers); err != nil {
 		logger.Error(err, "Error running controller")
 		klog.FlushAndExit(klog.ExitFlushTimeout, 1)
 	}
@@ -103,7 +104,7 @@ func init() {
 	flag.IntVar(&workers, "workers", 2, "Controller run with amount of workers")
 
 	flag.StringVar(&pgHost, "pg_host", "localhost", "Postgresql server host name")
-	flag.IntVar(&pgPort, "workers", 5432, "Postgresql server port")
+	flag.IntVar(&pgPort, "pg_port", 5432, "Postgresql server port")
 	flag.StringVar(&pgAdminUser, "pg_admin_user", "", "Postgresql user with privileges to create databases and roles")
 	flag.StringVar(&pgAdminPassword, "pg_admin_password", "", "Postgresql admin user's password")
 }

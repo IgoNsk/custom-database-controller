@@ -1,4 +1,4 @@
-package customdatabase
+package usecases
 
 import (
 	"context"
@@ -20,6 +20,7 @@ import (
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog/v2"
 
+	"k8s.io/custom-database/internal/customdatabase"
 	v1 "k8s.io/custom-database/pkg/apis/cusotmdatabase/v1"
 	clientset "k8s.io/custom-database/pkg/generated/clientset/versioned"
 	samplescheme "k8s.io/custom-database/pkg/generated/clientset/versioned/scheme"
@@ -30,14 +31,14 @@ import (
 const controllerAgentName = "sample-controller"
 
 const (
-	// SuccessSynced is used as part of the Event 'reason' when a Foo is synced
+	// SuccessSynced is used as part of the Event 'reason' when a CustomDatabase is synced
 	SuccessSynced = "Synced"
-	// MessageResourceSynced is the message used for an Event fired when a Foo
+	// MessageResourceSynced is the message used for an Event fired when a CustomDatabase
 	// is synced successfully
-	MessageResourceSynced = "Foo synced successfully"
+	MessageResourceSynced = "CustomDatabase synced successfully"
 )
 
-// Controller is the controller implementation for Foo resources
+// Controller is the controller implementation for CustomDatabase resources
 type Controller struct {
 	// kubeclientset is a standard kubernetes clientset
 	kubeclientset kubernetes.Interface
@@ -64,10 +65,10 @@ type Controller struct {
 
 	// we use here concrete DomainService instead of interface, because this component - is a business logic, that can't
 	// be different or changed. Also this component - pure, without any side effects.
-	domainService *DomainService
+	domainService *customdatabase.DomainService
 }
 
-// DatabaseManager interface of component, that encapsulated Postgresql service of management databases and roles
+// DatabaseManager interface of component, that encapsulated Postgresql service of management expectedDatabases and roles
 type DatabaseManager interface {
 	CreateDatabase(ctx context.Context, database string) error
 	DropDatabase(ctx context.Context, database string) error
@@ -87,7 +88,7 @@ func NewController(
 	secretInformer informerscorev1.SecretInformer,
 	customDatabaseInformer informers.CustomDatabaseInformer,
 	databaseManager DatabaseManager,
-	domainService *DomainService,
+	domainService *customdatabase.DomainService,
 ) *Controller {
 	logger := klog.FromContext(ctx)
 
@@ -116,7 +117,7 @@ func NewController(
 	}
 
 	logger.Info("Setting up event handlers")
-	// Set up an event handler for when Foo resources change
+	// Set up an event handler for when CustomDatabase resources change
 	customDatabaseInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: controller.enqueueCustomDatabase,
 		UpdateFunc: func(old, new interface{}) {
@@ -148,7 +149,7 @@ func (c *Controller) Run(ctx context.Context, workers int) error {
 	}
 
 	logger.Info("Starting workers", "count", workers)
-	// Launch two workers to process Foo resources
+	// Launch two workers to process CustomDatabase resources
 	for i := 0; i < workers; i++ {
 		go wait.UntilWithContext(ctx, c.runWorker, time.Second)
 	}
@@ -203,7 +204,7 @@ func (c *Controller) processNextWorkItem(ctx context.Context) bool {
 			return nil
 		}
 		// Run the syncHandler, passing it the namespace/name string of the
-		// Foo resource to be synced.
+		// CustomDatabase resource to be synced.
 		if err := c.syncHandler(ctx, key); err != nil {
 			// Put the item back on the workqueue to handle any transient errors.
 			c.workqueue.AddRateLimited(key)
@@ -225,7 +226,7 @@ func (c *Controller) processNextWorkItem(ctx context.Context) bool {
 }
 
 // syncHandler compares the actual state with the desired, and attempts to
-// converge the two. It then updates the Status block of the Foo resource
+// converge the two. It then updates the Status block of the CustomDatabase resource
 // with the current status of the resource.
 func (c *Controller) syncHandler(ctx context.Context, key string) error {
 	// Convert the namespace/name string into a distinct namespace and name
@@ -270,14 +271,14 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 	logger.V(4).Info("Update secret resource", "secretName", secret.Name)
 
 	err = c.databaseManager.CreateDatabase(ctx, createdDatabaseSettings.Database.Name)
-	if err == ErrDatabaseAlreadyExists {
+	if err == customdatabase.ErrDatabaseAlreadyExists {
 		logger.Info("database already exists", "db_name", createdDatabaseSettings.Database.Name)
 	} else if err != nil {
 		return err
 	}
 
 	err = c.databaseManager.CreateUser(ctx, createdDatabaseSettings.Database.User, createdDatabaseSettings.Database.Password)
-	if err == ErrUserAlreadyExists {
+	if err == customdatabase.ErrUserAlreadyExists {
 		logger.Info("user already exists", "user_name", createdDatabaseSettings.Database.User)
 		if isCustomDatabaseSecretsEmpty(secret) {
 			logger.Info("secretName was changed, we have to update user password and store it in new secret",
@@ -318,7 +319,7 @@ func (c *Controller) syncHandler(ctx context.Context, key string) error {
 	return nil
 }
 
-func newSecretWithDBInfo(secret *corev1.Secret, dbInfo CreatedDatabaseInfo) *corev1.Secret {
+func newSecretWithDBInfo(secret *corev1.Secret, dbInfo customdatabase.CreatedDatabaseInfo) *corev1.Secret {
 	newSecret := secret.DeepCopy()
 
 	// todo security https://kubernetes.io/docs/concepts/security/secrets-good-practices/
@@ -355,7 +356,7 @@ func isCustomDatabaseSecretsEmpty(secret *corev1.Secret) bool {
 	return false
 }
 
-func (c *Controller) deleteHandler(ctx context.Context, createdDatabaseSettings CreatedDatabaseInfo) error {
+func (c *Controller) deleteHandler(ctx context.Context, createdDatabaseSettings customdatabase.CreatedDatabaseInfo) error {
 	err := c.databaseManager.DropDatabase(ctx, createdDatabaseSettings.Database.Name)
 	if err != nil {
 		return err
@@ -369,7 +370,7 @@ func (c *Controller) deleteHandler(ctx context.Context, createdDatabaseSettings 
 	return nil
 }
 
-// enqueueCustomDatabase takes a Foo resource and converts it into a namespace/name
+// enqueueCustomDatabase takes a CustomDatabase resource and converts it into a namespace/name
 // string which is then put onto the work queue. This method should *not* be
 // passed resources of any type other than CustomDatabase.
 func (c *Controller) enqueueCustomDatabase(obj interface{}) {
