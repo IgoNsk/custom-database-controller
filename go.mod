@@ -3,6 +3,8 @@ module k8s.io/custom-database
 go 1.19
 
 require (
+	github.com/jmoiron/sqlx v1.3.5
+	github.com/lib/pq v1.10.9
 	k8s.io/api v0.27.1
 	k8s.io/apimachinery v0.27.1
 	k8s.io/client-go v0.27.1
