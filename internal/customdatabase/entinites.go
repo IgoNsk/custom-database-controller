@@ -7,13 +7,13 @@ var (
 	ErrUserAlreadyExists     = fmt.Errorf("user already exists")
 )
 
-type CreatedDatabaseInfo struct {
-	Host
-	Database
+type Entity struct {
+	Host     Host
+	Database Database
 }
 
 type Host struct {
-	DSN  string
+	Name string
 	Port int
 }
 
@@ -43,10 +43,10 @@ func NewDomainService(host string, port int) (*DomainService, error) {
 	}, nil
 }
 
-func (ds *DomainService) CreateDatabaseCreds(name string) CreatedDatabaseInfo {
-	return CreatedDatabaseInfo{
+func (ds *DomainService) CreateCustomDatabaseEntity(name string) Entity {
+	return Entity{
 		Host: Host{
-			DSN:  ds.dbServerHost,
+			Name: ds.dbServerHost,
 			Port: ds.dbServerPort,
 		},
 		Database: Database{

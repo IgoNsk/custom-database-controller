@@ -7,7 +7,6 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	informerscorev1 "k8s.io/client-go/informers/core/v1"
@@ -21,14 +20,13 @@ import (
 	"k8s.io/klog/v2"
 
 	"k8s.io/custom-database/internal/customdatabase"
-	v1 "k8s.io/custom-database/pkg/apis/cusotmdatabase/v1"
 	clientset "k8s.io/custom-database/pkg/generated/clientset/versioned"
 	samplescheme "k8s.io/custom-database/pkg/generated/clientset/versioned/scheme"
 	informers "k8s.io/custom-database/pkg/generated/informers/externalversions/cusotmdatabase/v1"
 	listers "k8s.io/custom-database/pkg/generated/listers/cusotmdatabase/v1"
 )
 
-const controllerAgentName = "sample-controller"
+const controllerAgentName = "custom-database-controller"
 
 const (
 	// SuccessSynced is used as part of the Event 'reason' when a CustomDatabase is synced
@@ -68,7 +66,7 @@ type Controller struct {
 	domainService *customdatabase.DomainService
 }
 
-// DatabaseManager interface of component, that encapsulated Postgresql service of management expectedDatabases and roles
+// DatabaseManager interface of component, that encapsulated Postgresql service for management databases and roles
 type DatabaseManager interface {
 	CreateDatabase(ctx context.Context, database string) error
 	DropDatabase(ctx context.Context, database string) error
@@ -93,8 +91,8 @@ func NewController(
 	logger := klog.FromContext(ctx)
 
 	// Create event broadcaster
-	// Add sample-controller types to the default Kubernetes Scheme so Events can be
-	// logged for sample-controller types.
+	// Add custom-database-controller types to the default Kubernetes Scheme so Events can be
+	// logged for custom-database-controller types.
 	utilruntime.Must(samplescheme.AddToScheme(scheme.Scheme))
 	logger.V(4).Info("Creating event broadcaster")
 
@@ -173,11 +171,11 @@ func (c *Controller) runWorker(ctx context.Context) {
 // attempt to process it, by calling the syncHandler.
 func (c *Controller) processNextWorkItem(ctx context.Context) bool {
 	obj, shutdown := c.workqueue.Get()
-	logger := klog.FromContext(ctx)
-
 	if shutdown {
 		return false
 	}
+
+	logger := klog.FromContext(ctx)
 
 	// We wrap this block in a func so we can defer c.workqueue.Done.
 	err := func(obj interface{}) error {
@@ -226,148 +224,28 @@ func (c *Controller) processNextWorkItem(ctx context.Context) bool {
 }
 
 // syncHandler compares the actual state with the desired, and attempts to
-// converge the two. It then updates the Status block of the CustomDatabase resource
-// with the current status of the resource.
+// converge the two.
 func (c *Controller) syncHandler(ctx context.Context, key string) error {
 	// Convert the namespace/name string into a distinct namespace and name
-	logger := klog.LoggerWithValues(klog.FromContext(ctx), "resourceName", key)
-
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
 		utilruntime.HandleError(fmt.Errorf("invalid resource key: %s", key))
 		return nil
 	}
 
-	createdDatabaseSettings := c.domainService.CreateDatabaseCreds(name)
+	ctx = contextWithResourceNameLogger(ctx, name)
 
 	// Get the CustomDatabase resource with this namespace/name
 	customDatabase, err := c.customDatabasesLister.CustomDatabases(namespace).Get(name)
 	if err != nil {
-		// The CustomDatabase resource may no longer exist, in which case we delete database
+		// The CustomDatabase resource may no longer exist, in this case we will delete database
 		if errors.IsNotFound(err) {
-			return c.deleteHandler(ctx, createdDatabaseSettings)
+			return c.deleteHandler(ctx, name)
 		}
 		return err
 	}
 
-	secretName := customDatabase.Spec.SecretName
-	if secretName == "" {
-		// We choose to absorb the error here as the worker would requeue the
-		// resource otherwise. Instead, the next time the resource is updated
-		// the resource will be queued again.
-		utilruntime.HandleError(fmt.Errorf("%s: secretName name must be specified", key))
-		return nil
-	}
-
-	// Get the secret with the name specified in CustomDatabase.spec
-	secret, err := c.secretLister.Secrets(customDatabase.Namespace).Get(secretName)
-	if errors.IsNotFound(err) {
-		secret, err = c.kubeclientset.CoreV1().Secrets(customDatabase.Namespace).Create(ctx, newSecret(customDatabase), metav1.CreateOptions{})
-	}
-	if err != nil {
-		return err
-	}
-
-	logger.V(4).Info("Update secret resource", "secretName", secret.Name)
-
-	err = c.databaseManager.CreateDatabase(ctx, createdDatabaseSettings.Database.Name)
-	if err == customdatabase.ErrDatabaseAlreadyExists {
-		logger.Info("database already exists", "db_name", createdDatabaseSettings.Database.Name)
-	} else if err != nil {
-		return err
-	}
-
-	err = c.databaseManager.CreateUser(ctx, createdDatabaseSettings.Database.User, createdDatabaseSettings.Database.Password)
-	if err == customdatabase.ErrUserAlreadyExists {
-		logger.Info("user already exists", "user_name", createdDatabaseSettings.Database.User)
-		if isCustomDatabaseSecretsEmpty(secret) {
-			logger.Info("secretName was changed, we have to update user password and store it in new secret",
-				"user_name", createdDatabaseSettings.Database.User,
-				"secret_name", secret.Name,
-			)
-
-			err = c.databaseManager.ChangeUserPassword(ctx, createdDatabaseSettings.Database.User, createdDatabaseSettings.Database.Password)
-			if err != nil {
-				return err
-			}
-		} else {
-			logger.Info("user already stored in actual secret",
-				"user_name", createdDatabaseSettings.Database.User,
-				"secret_name", secret.Name,
-			)
-		}
-	} else if err != nil {
-		return err
-	}
-
-	err = c.databaseManager.GrantUserToDatabase(ctx, createdDatabaseSettings.Database.User, createdDatabaseSettings.Database.Name)
-	if err != nil {
-		return err
-	}
-
-	if isCustomDatabaseSecretsEmpty(secret) {
-		// store secret value
-		logger.V(4).Info("Update secret resource", "secretName", secret.Name)
-		newSecret := newSecretWithDBInfo(secret, createdDatabaseSettings)
-		_, err = c.kubeclientset.CoreV1().Secrets(customDatabase.Namespace).Update(ctx, newSecret, metav1.UpdateOptions{})
-		if err != nil {
-			return err
-		}
-	}
-
-	c.recorder.Event(customDatabase, corev1.EventTypeNormal, SuccessSynced, MessageResourceSynced)
-	return nil
-}
-
-func newSecretWithDBInfo(secret *corev1.Secret, dbInfo customdatabase.CreatedDatabaseInfo) *corev1.Secret {
-	newSecret := secret.DeepCopy()
-
-	// todo security https://kubernetes.io/docs/concepts/security/secrets-good-practices/
-	newSecret.StringData = make(map[string]string)
-	newSecret.StringData["DB_HOST"] = dbInfo.DSN
-	newSecret.StringData["DB_PORT"] = fmt.Sprintf("%d", dbInfo.Port)
-	newSecret.StringData["DB_NAME"] = dbInfo.Database.Name
-	newSecret.StringData["DB_USERNAME"] = dbInfo.Database.User
-	newSecret.StringData["DB_PASSWORD"] = dbInfo.Database.Password
-
-	return newSecret
-}
-
-func isCustomDatabaseSecretsEmpty(secret *corev1.Secret) bool {
-	if len(secret.Data) == 0 {
-		return true
-	}
-	if val, found := secret.Data["DB_HOST"]; !found || len(val) == 0 {
-		return true
-	}
-	if val, found := secret.Data["DB_PORT"]; !found || len(val) == 0 {
-		return true
-	}
-	if val, found := secret.Data["DB_NAME"]; !found || len(val) == 0 {
-		return true
-	}
-	if val, found := secret.Data["DB_USERNAME"]; !found || len(val) == 0 {
-		return true
-	}
-	if val, found := secret.Data["DB_PASSWORD"]; !found || len(val) == 0 {
-		return true
-	}
-
-	return false
-}
-
-func (c *Controller) deleteHandler(ctx context.Context, createdDatabaseSettings customdatabase.CreatedDatabaseInfo) error {
-	err := c.databaseManager.DropDatabase(ctx, createdDatabaseSettings.Database.Name)
-	if err != nil {
-		return err
-	}
-
-	err = c.databaseManager.DropUser(ctx, createdDatabaseSettings.Database.User)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return c.addOrUpdateHandler(ctx, customDatabase)
 }
 
 // enqueueCustomDatabase takes a CustomDatabase resource and converts it into a namespace/name
@@ -383,17 +261,18 @@ func (c *Controller) enqueueCustomDatabase(obj interface{}) {
 	c.workqueue.Add(key)
 }
 
-func newSecret(cd *v1.CustomDatabase) *corev1.Secret {
-	return &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      cd.Spec.SecretName,
-			Namespace: cd.Namespace,
-			OwnerReferences: []metav1.OwnerReference{
-				*metav1.NewControllerRef(cd, v1.SchemeGroupVersion.WithKind("CustomDatabase")),
-			},
-			Labels: map[string]string{
-				"controller": cd.Name,
-			},
-		},
+func contextWithResourceNameLogger(ctx context.Context, name string) context.Context {
+	logger := klog.LoggerWithValues(klog.FromContext(ctx), "resourceName", name)
+
+	ctx = context.WithValue(ctx, "syncHandlerLogger", logger)
+
+	return ctx
+}
+
+func loggerFromHandlerContext(ctx context.Context) klog.Logger {
+	if logger, ok := ctx.Value("syncHandlerLogger").(klog.Logger); ok {
+		return logger
 	}
+
+	return klog.FromContext(ctx)
 }

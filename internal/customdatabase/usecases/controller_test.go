@@ -35,16 +35,14 @@ func TestCreateDatabaseAndSecret(t *testing.T) {
 	f.customDatabaseLister = append(f.customDatabaseLister, customDatabaseItem)
 	f.objects = append(f.objects, customDatabaseItem)
 
-	expCustomDb := customdatabase.CreatedDatabaseInfo{
+	expCustomDb := customdatabase.Entity{
 		Host:     customdatabase.Host{"localhost", 5432},
 		Database: customdatabase.Database{Name: "test", User: "test", Password: "testtesttest"},
 	}
 
-	expSecret := newSecret(customDatabaseItem)
-	expFinalSecret := newSecretWithDBInfo(expSecret, expCustomDb)
+	expFinalSecret := secretWithDBInfo(newEmptySecret(customDatabaseItem), expCustomDb)
 
-	f.expectCreateSecretAction(expSecret)
-	f.expectUpdateSecretAction(expFinalSecret)
+	f.expectCreateSecretAction(expFinalSecret)
 	f.expectExistsDatabase(expCustomDb)
 
 	f.run(ctx, getKey(customDatabaseItem, t))
@@ -59,13 +57,13 @@ func TestDoNothing(t *testing.T) {
 	f.customDatabaseLister = append(f.customDatabaseLister, customDatabaseItem)
 	f.objects = append(f.objects, customDatabaseItem)
 
-	expCustomDb := customdatabase.CreatedDatabaseInfo{
+	expCustomDb := customdatabase.Entity{
 		Host:     customdatabase.Host{"localhost", 5432},
 		Database: customdatabase.Database{Name: "test", User: "test", Password: "testtesttest"},
 	}
 	f.databases = append(f.databases, expCustomDb)
 
-	expFinalSecret := makeReadableSecret(newSecretWithDBInfo(newSecret(customDatabaseItem), expCustomDb))
+	expFinalSecret := secretWithDBInfo(newEmptySecret(customDatabaseItem), expCustomDb)
 	f.secretLister = append(f.secretLister, expFinalSecret)
 	f.kubeobjects = append(f.kubeobjects, expFinalSecret)
 
@@ -84,20 +82,18 @@ func TestUpdateSecret(t *testing.T) {
 	f.customDatabaseLister = append(f.customDatabaseLister, updatedCustomDatabaseItem)
 	f.objects = append(f.objects, updatedCustomDatabaseItem)
 
-	expCustomDb := customdatabase.CreatedDatabaseInfo{
+	expCustomDb := customdatabase.Entity{
 		Host:     customdatabase.Host{"localhost", 5432},
 		Database: customdatabase.Database{Name: "test", User: "test", Password: "testtesttest"},
 	}
 	f.databases = append(f.databases, expCustomDb)
 
-	oldFinalSecret := makeReadableSecret(newSecretWithDBInfo(newSecret(oldCustomDatabaseItem), expCustomDb))
+	oldFinalSecret := secretWithDBInfo(newEmptySecret(oldCustomDatabaseItem), expCustomDb)
 	f.secretLister = append(f.secretLister, oldFinalSecret)
 	f.kubeobjects = append(f.kubeobjects, oldFinalSecret)
 
-	expSecret := newSecret(updatedCustomDatabaseItem)
-	expFinalSecret := newSecretWithDBInfo(expSecret, expCustomDb)
-	f.expectCreateSecretAction(expSecret)
-	f.expectUpdateSecretAction(expFinalSecret)
+	expFinalSecret := secretWithDBInfo(newEmptySecret(updatedCustomDatabaseItem), expCustomDb)
+	f.expectCreateSecretAction(expFinalSecret)
 	f.expectExistsDatabase(expCustomDb)
 
 	f.run(ctx, getKey(updatedCustomDatabaseItem, t))
@@ -109,13 +105,13 @@ func TestDeleteDatabaseAndSecret(t *testing.T) {
 	customDatabaseItem := newCustomDatabase("test")
 	_, ctx := ktesting.NewTestContext(t)
 
-	expCustomDb := customdatabase.CreatedDatabaseInfo{
+	expCustomDb := customdatabase.Entity{
 		Host:     customdatabase.Host{"localhost", 5432},
 		Database: customdatabase.Database{Name: "test", User: "test", Password: "testtesttest"},
 	}
 	f.databases = append(f.databases, expCustomDb)
 
-	expFinalSecret := makeReadableSecret(newSecretWithDBInfo(newSecret(customDatabaseItem), expCustomDb))
+	expFinalSecret := secretWithDBInfo(newEmptySecret(customDatabaseItem), expCustomDb)
 	f.secretLister = append(f.secretLister, expFinalSecret)
 	f.kubeobjects = append(f.kubeobjects, expFinalSecret)
 
@@ -139,13 +135,13 @@ type fixture struct {
 	// Objects to put in the store.
 	customDatabaseLister []*customdatabasecontroller.CustomDatabase
 	secretLister         []*corev1.Secret
-	databases            []customdatabase.CreatedDatabaseInfo
+	databases            []customdatabase.Entity
 
 	// Actions expected to happen on the client.
 	kubeactions          []core.Action
 	actions              []core.Action
-	expectedDatabases    []customdatabase.CreatedDatabaseInfo
-	notExpectedDatabases []customdatabase.CreatedDatabaseInfo
+	expectedDatabases    []customdatabase.Entity
+	notExpectedDatabases []customdatabase.Entity
 
 	// Objects from here preloaded into NewSimpleFake.
 	kubeobjects []runtime.Object
@@ -271,37 +267,37 @@ func (f *fixture) runController(ctx context.Context, customDatabaseName string, 
 
 	// todo refactoring
 	for _, db := range f.expectedDatabases {
-		if _, isExists := databaseManager.Databases[db.Name]; !isExists {
-			f.t.Errorf("%s database didn't create", db.Name)
+		if _, isExists := databaseManager.Databases[db.Database.Name]; !isExists {
+			f.t.Errorf("%s database didn't create", db.Database.Name)
 		}
-		if userPassword, isExists := databaseManager.Users[db.User]; isExists {
-			if userPassword != db.Password {
-				f.t.Errorf("%s user's wassword wrong: expected %s, given %s", db.Name, db.Password, userPassword)
+		if userPassword, isExists := databaseManager.Users[db.Database.User]; isExists {
+			if userPassword != db.Database.Password {
+				f.t.Errorf("%s user's wassword wrong: expected %s, given %s", db.Database.Name, db.Database.Password, userPassword)
 			}
 		} else {
-			f.t.Errorf("%s user didn't create", db.User)
+			f.t.Errorf("%s user didn't create", db.Database.User)
 		}
-		if grantedDBs, isExists := databaseManager.User2Database[db.User]; isExists {
+		if grantedDBs, isExists := databaseManager.User2Database[db.Database.User]; isExists {
 			isDBGranted := false
 			for _, grantedDB := range grantedDBs {
-				if grantedDB == db.Name {
+				if grantedDB == db.Database.Name {
 					isDBGranted = true
 				}
 			}
 			if !isDBGranted {
-				f.t.Errorf("%s user didn't grant to %s", db.User, db.Name)
+				f.t.Errorf("%s user didn't grant to %s", db.Database.User, db.Database.Name)
 			}
 		} else {
-			f.t.Errorf("%s database didn't create", db.Name)
+			f.t.Errorf("%s database didn't create", db.Database.Name)
 		}
 	}
 
 	for _, notExpectedDB := range f.notExpectedDatabases {
-		if _, isExists := databaseManager.Databases[notExpectedDB.Name]; isExists {
-			f.t.Errorf("%s database shouldn't exist", notExpectedDB.Name)
+		if _, isExists := databaseManager.Databases[notExpectedDB.Database.Name]; isExists {
+			f.t.Errorf("%s database shouldn't exist", notExpectedDB.Database.Name)
 		}
-		if _, isExists := databaseManager.Users[notExpectedDB.User]; isExists {
-			f.t.Errorf("%s user shouldn't exist", notExpectedDB.User)
+		if _, isExists := databaseManager.Users[notExpectedDB.Database.User]; isExists {
+			f.t.Errorf("%s user shouldn't exist", notExpectedDB.Database.User)
 		}
 	}
 }
@@ -384,11 +380,11 @@ func (f *fixture) expectDeleteSecretAction(s *corev1.Secret) {
 	f.kubeactions = append(f.kubeactions, core.NewDeleteAction(schema.GroupVersionResource{Resource: "secrets"}, s.Namespace, s.Name))
 }
 
-func (f *fixture) expectExistsDatabase(cdr customdatabase.CreatedDatabaseInfo) {
+func (f *fixture) expectExistsDatabase(cdr customdatabase.Entity) {
 	f.expectedDatabases = append(f.expectedDatabases, cdr)
 }
 
-func (f fixture) notExpectExistsDatabase(cdr customdatabase.CreatedDatabaseInfo) {
+func (f fixture) notExpectExistsDatabase(cdr customdatabase.Entity) {
 	f.notExpectedDatabases = append(f.notExpectedDatabases, cdr)
 }
 
@@ -399,20 +395,4 @@ func getKey(customDatabase *customdatabasecontroller.CustomDatabase, t *testing.
 		return ""
 	}
 	return key
-}
-
-func makeReadableSecret(s *corev1.Secret) *corev1.Secret {
-	rs := s.DeepCopy()
-
-	if len(rs.StringData) == 0 {
-		return rs
-	}
-
-	rs.Data = make(map[string][]byte)
-	for k, v := range rs.StringData {
-		rs.Data[k] = []byte(v)
-	}
-
-	rs.StringData = nil
-	return rs
 }
